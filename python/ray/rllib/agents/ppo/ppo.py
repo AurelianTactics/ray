@@ -8,7 +8,7 @@ import pickle
 import ray
 from ray.rllib.agents import Agent, with_common_config
 from ray.rllib.agents.ppo.ppo_policy_graph import PPOPolicyGraph
-from ray.rllib.utils import FilterManager, merge_dicts
+from ray.rllib.utils import FilterManager
 from ray.rllib.optimizers import SyncSamplesOptimizer, LocalMultiGPUOptimizer
 from ray.tune.trial import Resources
 
@@ -18,6 +18,8 @@ DEFAULT_CONFIG = with_common_config({
     "use_gae": True,
     # GAE(lambda) parameter
     "lambda": 1.0,
+    #use KL divergence
+    "use_kl": True,
     # Initial coefficient for KL divergence
     "kl_coeff": 0.2,
     # Number of timesteps collected for each SGD round
@@ -66,7 +68,7 @@ class PPOAgent(Agent):
 
     @classmethod
     def default_resource_request(cls, config):
-        cf = merge_dicts(cls._default_config, config)
+        cf = dict(cls._default_config, **config)
         return Resources(
             cpu=1,
             gpu=cf["num_gpus"],

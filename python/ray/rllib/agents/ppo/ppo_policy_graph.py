@@ -24,7 +24,8 @@ class PPOLoss(object):
                  entropy_coeff=0,
                  clip_param=0.1,
                  vf_loss_coeff=1.0,
-                 use_gae=True):
+                 use_gae=True,
+                 use_kl=True):
         """Constructs the loss for Proximal Policy Objective.
 
         Arguments:
@@ -54,8 +55,12 @@ class PPOLoss(object):
         # Make loss functions.
         logp_ratio = tf.exp(
             curr_action_dist.logp(actions) - prev_dist.logp(actions))
-        action_kl = prev_dist.kl(curr_action_dist)
-        self.mean_kl = tf.reduce_mean(action_kl)
+        if use_kl:
+            action_kl = prev_dist.kl(curr_action_dist)
+            self.mean_kl = tf.reduce_mean(action_kl)
+        else:
+            action_kl = 0
+            self.mean_kl = tf.reduce_mean(action_kl)
 
         curr_entropy = curr_action_dist.entropy()
         self.mean_entropy = tf.reduce_mean(curr_entropy)
@@ -73,6 +78,7 @@ class PPOLoss(object):
             vf_loss2 = tf.square(vf_clipped - value_targets)
             vf_loss = tf.maximum(vf_loss1, vf_loss2)
             self.mean_vf_loss = tf.reduce_mean(vf_loss)
+
             loss = tf.reduce_mean(-surrogate_loss + cur_kl_coeff * action_kl +
                                   vf_loss_coeff * vf_loss -
                                   entropy_coeff * curr_entropy)
@@ -180,7 +186,8 @@ class PPOPolicyGraph(TFPolicyGraph):
             entropy_coeff=self.config["entropy_coeff"],
             clip_param=self.config["clip_param"],
             vf_loss_coeff=self.config["kl_target"],
-            use_gae=self.config["use_gae"])
+            use_gae=self.config["use_gae"],
+            use_kl=self.config["use_kl"])
 
         TFPolicyGraph.__init__(
             self,
@@ -219,12 +226,15 @@ class PPOPolicyGraph(TFPolicyGraph):
         }
 
     def update_kl(self, sampled_kl):
-        if sampled_kl > 2.0 * self.kl_target:
-            self.kl_coeff_val *= 1.5
-        elif sampled_kl < 0.5 * self.kl_target:
-            self.kl_coeff_val *= 0.5
-        self.kl_coeff.load(self.kl_coeff_val, session=self.sess)
-        return self.kl_coeff_val
+        if self.config["use_kl"]:
+            if sampled_kl > 2.0 * self.kl_target:
+                self.kl_coeff_val *= 1.5
+            elif sampled_kl < 0.5 * self.kl_target:
+                self.kl_coeff_val *= 0.5
+            self.kl_coeff.load(self.kl_coeff_val, session=self.sess)
+            return self.kl_coeff_val
+        else:
+            return self.kl_coeff_val
 
     def postprocess_trajectory(self, sample_batch, other_agent_batches=None):
         last_r = 0.0
